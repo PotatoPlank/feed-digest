@@ -1,0 +1,40 @@
+name: scp files
+on: [ push ]
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@master
+
+      - name: Set current date as env variable
+        run: echo "NOW=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_ENV
+
+      - name: Write build date
+        uses: "https://github.com/DamianReeves/write-file-action@master"
+        with:
+          path: .build-version
+          write-mode: overwrite
+          contents: |
+            ${{ env.NOW }}
+
+      - name: Copy repository to server
+        uses: https://github.com/appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          source: "."
+          target: "/home/docker/spudbot"
+
+      - name: Update Packages and Restart SpudBot Service
+        uses: https://github.com/appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: cd /home/docker/spudbot && composer install && systemctl restart spudbot
