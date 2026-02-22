@@ -1,20 +1,23 @@
 services:
     php:
-#        image: dunglas/frankenphp
-        # uncomment the following line if you want to use a custom Dockerfile
-        build: .
-        # uncomment the following line if you want to run this in a production environment
-        # restart: always
+        container_name: feed-digest
+        image: ghcr.io/potatoplank/feed-digest:latest
+        restart: always # disable during development
         ports:
             - "80:80" # HTTP
             - "443:443" # HTTPS
             - "443:443/udp" # HTTP/3
         volumes:
-            - ./:/app/
             - caddy_data:/data
-            - caddy_config:/config
-        # comment the following line in production, it allows to have nice human-readable logs in dev
-        tty: true
+            - caddy_config:/config'
+            - ./data/database.sqlite:/app/database/database.sqlite:rw # SQLite persistent storage
+        tty: true # Disable in production, enables readable logs
+        environment:
+            FEED_API_TOKEN: <your_token_here>
+            APP_URL: http://localhost:80
+            APP_DEBUG: false # Enable for development
+            APP_KEY: <base64_encoded_key> # Generate with `php artisan key:generate`
+            #SERVER_NAME: :80 # Enable for reverse proxy setup
 
 # Volumes needed for Caddy certificates and configuration
 volumes:
