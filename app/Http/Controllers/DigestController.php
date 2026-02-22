@@ -6,6 +6,7 @@ use App\Http\Requests\DigestStoreRequest;
 use App\Http\Requests\DigestUpdateRequest;
 use App\Models\Digest;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 
 class DigestController extends Controller
 {
@@ -33,6 +34,13 @@ class DigestController extends Controller
         $digest->save();
 
         return response()->json($this->serializeDigest($digest));
+    }
+
+    public function destroy(Digest $digest): Response
+    {
+        $digest->delete();
+
+        return response()->noContent();
     }
 
     /**
