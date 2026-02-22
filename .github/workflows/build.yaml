@@ -26,6 +26,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      - name: lowercase github.repository_owner
+        run: |
+          echo "OWNER=`echo ${{github.repository_owner}} | tr '[:upper:]' '[:lower:]'`" >>${GITHUB_ENV}
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -39,13 +43,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-            ${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+            ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
           cache-from: |
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache
+            type=registry,ref=ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:buildcache
             type=local,src=/tmp/.buildx-cache
           cache-to: |
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+            type=registry,ref=ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
             type=local,dest=/tmp/.buildx-cache,mode=max
         env:
           DOCKER_BUILDKIT: 1
