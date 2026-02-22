@@ -44,7 +44,6 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
           cache-from: |
             type=registry,ref=ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:buildcache
             type=local,src=/tmp/.buildx-cache
