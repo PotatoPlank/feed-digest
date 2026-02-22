@@ -1,7 +1,7 @@
 name: Upload latest image to Registry
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 on:
