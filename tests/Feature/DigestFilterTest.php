@@ -13,6 +13,7 @@ test('applies category, author, summary filters, and content removals', function
     $digest = Digest::factory()->create([
         'feed_url' => 'https://example.com/feed.xml',
         'timezone' => 'UTC',
+        'only_prior_to_today' => false,
         'filters' => [
             '+#"gaming"',
             '-author:"jim jones"',

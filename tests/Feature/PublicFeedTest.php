@@ -15,6 +15,7 @@ test('renders public rss feed by digest uuid', function () {
         'feed_url' => 'https://example.com/feed.xml',
         'name' => 'My Digest',
         'timezone' => 'UTC',
+        'only_prior_to_today' => false,
     ]);
 
     $today = CarbonImmutable::now('UTC');
@@ -68,6 +69,7 @@ test('renders html digest for a specific date', function () {
         'feed_url' => 'https://example.com/feed.xml',
         'name' => 'Example Feed',
         'timezone' => 'UTC',
+        'only_prior_to_today' => false,
     ]);
 
     $today = CarbonImmutable::now('UTC');

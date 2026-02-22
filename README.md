@@ -95,15 +95,24 @@ Payload:
   "feed_url": "https://example.com/feed.xml",
   "name": "My Digest",
   "timezone": "UTC",
-  "filters": ["+#\"gaming\"", "-author:\"bob smith\""]
+  "filters": ["+#\"gaming\"", "-author:\"bob smith\""],
+  "only_prior_to_today": true
 }
 ```
+
+Notes:
+- When creating a digest, either `feed_url` or `name` must be unique.
+- `only_prior_to_today` defaults to `true` and limits digests to entries dated before today.
 
 ### Update a digest
 
 `PUT /api/digests/{uuid}`
 
 Payload fields are the same as `POST /api/digests`, but all are optional.
+
+### Delete a digest
+
+`DELETE /api/digests/{uuid}`
 
 ## Public Feeds
 

@@ -268,3 +268,12 @@ protected function isAccessible(User $user, ?string $path = null): bool
 - IMPORTANT: Activate `pest-testing` every time you're working with a Pest or testing-related task.
 
 </laravel-boost-guidelines>
+<repo-instructions>
+Always do the following for every feature request.
+
+- Update the README.md file with the latest instructions.
+- Generate tests for new or updated features.
+- Fix any failing tests.
+- Report the code coverage to the user in the final response. Using ``php artisan test --coverage``
+
+</repo-instructions>
