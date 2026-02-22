@@ -19,12 +19,17 @@ class FeedAggregator
         string $url,
         CarbonImmutable $date,
         string $timezone,
-        array $filters = []
+        array $filters = [],
+        bool $onlyPriorToToday = true
     ): array {
         $xml = $this->fetchXml($url);
         $items = $this->extractItems($xml, $timezone);
         $feedTitle = $this->extractFeedTitle($xml);
         $targetDate = $date->toDateString();
+
+        if ($onlyPriorToToday) {
+            $items = $this->filterPriorToToday($items, $timezone);
+        }
 
         $filtered = array_filter(
             $items,
@@ -45,20 +50,28 @@ class FeedAggregator
      * @param  array<int, string>  $filters
      * @return array{title: string, groupsByDate: array<string, array<string, array<int, array<string, mixed>>>>}
      */
-    public function aggregateByDate(string $url, string $timezone, array $filters = []): array
-    {
+    public function aggregateByDate(
+        string $url,
+        string $timezone,
+        array $filters = [],
+        bool $onlyPriorToToday = true
+    ): array {
         $xml = $this->fetchXml($url);
         $items = $this->extractItems($xml, $timezone);
         $feedTitle = $this->extractFeedTitle($xml);
         $grouped = [];
         $filterConfig = $this->parseFilters($filters);
 
+        if ($onlyPriorToToday) {
+            $items = $this->filterPriorToToday($items, $timezone);
+        }
+
         $items = $this->applyFilters($items, $filterConfig);
 
         foreach ($items as $item) {
             $publishedAt = $item['published_at'];
 
-            if (!$publishedAt instanceof CarbonImmutable) {
+            if (! $publishedAt instanceof CarbonImmutable) {
                 continue;
             }
 
@@ -78,11 +91,26 @@ class FeedAggregator
         ];
     }
 
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterPriorToToday(array $items, string $timezone): array
+    {
+        $startOfToday = CarbonImmutable::now($timezone)->startOfDay();
+
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => $item['published_at'] instanceof CarbonImmutable
+                && $item['published_at']->lt($startOfToday)
+        ));
+    }
+
     private function fetchXml(string $url): SimpleXMLElement
     {
         $response = Http::timeout(10)->get($url);
 
-        if (!$response->ok()) {
+        if (! $response->ok()) {
             throw new RuntimeException('Unable to fetch the feed.');
         }
 
@@ -101,7 +129,7 @@ class FeedAggregator
         $xml = simplexml_load_string($body, 'SimpleXMLElement', LIBXML_NOCDATA);
         libxml_clear_errors();
 
-        if (!$xml instanceof SimpleXMLElement) {
+        if (! $xml instanceof SimpleXMLElement) {
             throw new RuntimeException('Feed XML could not be parsed.');
         }
 
@@ -367,7 +395,7 @@ class FeedAggregator
         foreach ($items as $item) {
             $publishedAt = $item['published_at'];
 
-            if (!$publishedAt instanceof CarbonImmutable) {
+            if (! $publishedAt instanceof CarbonImmutable) {
                 continue;
             }
 
@@ -423,7 +451,7 @@ class FeedAggregator
         ];
 
         foreach ($filters as $filter) {
-            if (!is_string($filter)) {
+            if (! is_string($filter)) {
                 continue;
             }
 
@@ -439,6 +467,7 @@ class FeedAggregator
                 if ($value !== '') {
                     $config[$key][] = $value;
                 }
+
                 continue;
             }
 
@@ -448,6 +477,7 @@ class FeedAggregator
                 if ($value !== '') {
                     $config[$key][] = $value;
                 }
+
                 continue;
             }
 
@@ -457,6 +487,7 @@ class FeedAggregator
                 if ($value !== '') {
                     $config[$key][] = $value;
                 }
+
                 continue;
             }
 
@@ -466,6 +497,7 @@ class FeedAggregator
                 if ($value !== '') {
                     $config[$key][] = $value;
                 }
+
                 continue;
             }
 
@@ -474,6 +506,7 @@ class FeedAggregator
                 if ($value !== '') {
                     $config['removeRegex'][] = $value;
                 }
+
                 continue;
             }
 
@@ -482,6 +515,7 @@ class FeedAggregator
                 if ($value !== '') {
                     $config['removeText'][] = $value;
                 }
+
                 continue;
             }
         }
@@ -520,7 +554,7 @@ class FeedAggregator
             $summary = (string) ($item['summary'] ?? '');
             $summaryLower = mb_strtolower($summary);
 
-            if ($requireCategoryMatch && !$this->matchesAny($categories, $includeCategories)) {
+            if ($requireCategoryMatch && ! $this->matchesAny($categories, $includeCategories)) {
                 continue;
             }
 
@@ -528,7 +562,7 @@ class FeedAggregator
                 continue;
             }
 
-            if ($requireAuthorMatch && !$this->matchesTextAny($author, $includeAuthors)) {
+            if ($requireAuthorMatch && ! $this->matchesTextAny($author, $includeAuthors)) {
                 continue;
             }
 
@@ -536,7 +570,7 @@ class FeedAggregator
                 continue;
             }
 
-            if ($requireSummaryMatch && !$this->matchesSummary($summaryLower, $includeSummary, $includeSummaryRegex)) {
+            if ($requireSummaryMatch && ! $this->matchesSummary($summaryLower, $includeSummary, $includeSummaryRegex)) {
                 continue;
             }
 

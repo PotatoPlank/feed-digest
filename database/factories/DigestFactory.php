@@ -21,6 +21,7 @@ class DigestFactory extends Factory
             'name' => $this->faker->words(2, true),
             'timezone' => 'UTC',
             'filters' => [],
+            'only_prior_to_today' => true,
         ];
     }
 }

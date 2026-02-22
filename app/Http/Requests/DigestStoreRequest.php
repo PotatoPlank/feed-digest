@@ -24,6 +24,7 @@ class DigestStoreRequest extends FormRequest
             'timezone' => ['nullable', 'timezone'],
             'filters' => ['nullable', 'array'],
             'filters.*' => ['string'],
+            'only_prior_to_today' => ['boolean'],
         ];
     }
 }

@@ -1,59 +1,153 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Daily Feed Digest
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Daily Feed Digest turns an RSS or Atom feed into daily digests. It exposes a public RSS feed (one item per day), HTML digests for specific dates, and a small authenticated API to manage digest definitions.
 
-## About Laravel
+## Disclaimer
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+The majority of this codebase was written with AI assistance and is provided as-is without any guarantees. While I may update it in the future, I do not intend to maintain it and will not be responsible for any damages.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- Aggregate RSS or Atom feeds into daily digests grouped by category.
+- Public RSS output with one item per day.
+- HTML view for a specific date with a clean digest layout.
+- Token-protected API for managing digests.
+- Optional filter rules for categories, authors, and summaries.
+- Cached outputs with configurable TTL.
 
-## Learning Laravel
+## Requirements
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- PHP 8.4+
+- Composer
+- Node.js + npm
+- SQLite (default) or another supported database
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Setup
 
-## Laravel Sponsors
+1. Install dependencies:
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+composer install
+npm install
+```
 
-### Premium Partners
+2. Configure environment:
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```bash
+cp .env.example .env
+php artisan key:generate
+```
 
-## Contributing
+3. Update `.env` with at least:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- `APP_URL` (used to build public feed links)
+- `APP_NAME` (used as a fallback title)
+- `FEED_API_TOKEN` (required for API access)
 
-## Code of Conduct
+4. Run migrations and build assets:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+php artisan migrate
+npm run build
+```
 
-## Security Vulnerabilities
+Alternatively, you can run the scripted setup:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+composer run setup
+```
 
-## License
+## Running Locally
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+composer run dev
+```
+
+This runs the PHP server, queue listener, Laravel Pail logs, and Vite concurrently. If you want to run them separately:
+
+```bash
+php artisan serve
+php artisan queue:listen --tries=1 --timeout=0
+npm run dev
+```
+
+## API Authentication
+
+All `/api` routes require the `FEED_API_TOKEN` value. Provide it via:
+
+- `Authorization: Bearer <token>` header, or
+- `?token=<token>` query parameter
+
+## API Endpoints
+
+### List digests
+
+`GET /api/digests`
+
+### Create a digest
+
+`POST /api/digests`
+
+Payload:
+
+```json
+{
+  "feed_url": "https://example.com/feed.xml",
+  "name": "My Digest",
+  "timezone": "UTC",
+  "filters": ["+#\"gaming\"", "-author:\"bob smith\""]
+}
+```
+
+### Update a digest
+
+`PUT /api/digests/{uuid}`
+
+Payload fields are the same as `POST /api/digests`, but all are optional.
+
+## Public Feeds
+
+- `GET /feed/{uuid}` returns an RSS feed (one item per day).
+- `GET /feed/{uuid}/{YYYY-MM-DD}` returns an HTML digest for the specified date.
+
+Optional query parameter:
+
+- `name` overrides the digest title in the RSS channel and HTML page.
+
+## Filter Rules
+
+Filters are case-insensitive and applied in order when aggregating items.
+
+- `+#"Category"` include categories that contain the value
+- `-#"Category"` exclude categories that contain the value
+- `+author:"Name"` include authors that contain the value
+- `-author:"Name"` exclude authors that contain the value
+- `+summary:"text"` include summaries containing the text
+- `-summary:"text"` exclude summaries containing the text
+- `+summary-regex:"pattern"` include summaries matching the regex
+- `-summary-regex:"pattern"` exclude summaries matching the regex
+- `remove:"text"` remove text from summaries
+- `remove-regex:"pattern"` remove regex matches from summaries
+
+Examples:
+
+```text
++#"gaming"
+-author:"bob smith"
+-summary-regex:"banned"
+remove:"Thank you for reading this post."
+remove-regex:"Secret Regex Example"
+```
+
+## Caching
+
+Digest outputs are cached in `storage/app/digests` using the TTL defined in `config/digest.php`.
+
+- Set `cache.ttl` to `0` to disable caching.
+- Supported units: `minutes`, `hours`, `days`.
+
+## Testing
+
+```bash
+php artisan test
+```

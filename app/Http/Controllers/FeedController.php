@@ -29,7 +29,8 @@ class FeedController extends Controller
             $result = $aggregator->aggregateByDate(
                 $digest->feed_url,
                 $timezone,
-                $digest->filters ?? []
+                $digest->filters ?? [],
+                $digest->only_prior_to_today ?? true
             );
             $groupsByDate = $result['groupsByDate'];
             $feedTitle = $nameOverride !== '' ? $nameOverride : ($digest->name ?: $result['title']);
@@ -58,7 +59,7 @@ class FeedController extends Controller
         $timezone = $digest->timezone ?: config('app.timezone');
         $dateInput = $request->input('date');
 
-        if (!is_string($dateInput) || $dateInput === '') {
+        if (! is_string($dateInput) || $dateInput === '') {
             return response()->json([
                 'message' => 'A valid date is required.',
             ], 422);
@@ -79,7 +80,8 @@ class FeedController extends Controller
                 $digest->feed_url,
                 $date,
                 $timezone,
-                $digest->filters ?? []
+                $digest->filters ?? [],
+                $digest->only_prior_to_today ?? true
             );
             $feedTitle = $nameOverride !== '' ? $nameOverride : ($digest->name ?: $result['title']);
             $baseTitle = $feedTitle !== '' ? $feedTitle : (string) config('app.name', 'Daily Feed Aggregator');
@@ -266,7 +268,7 @@ HTML;
         foreach ($groupsByDate as $date => $groups) {
             $dateInstance = CarbonImmutable::createFromFormat('Y-m-d', $date, config('app.timezone'));
 
-            if (!$dateInstance instanceof CarbonImmutable) {
+            if (! $dateInstance instanceof CarbonImmutable) {
                 continue;
             }
 
@@ -385,7 +387,7 @@ HTML;
 
     private function isCacheFresh(string $path): bool
     {
-        if (!is_file($path)) {
+        if (! is_file($path)) {
             return false;
         }
 

@@ -48,6 +48,7 @@ class DigestController extends Controller
             'name' => $digest->name,
             'timezone' => $digest->timezone,
             'filters' => $digest->filters ?? [],
+            'only_prior_to_today' => $digest->only_prior_to_today,
             'links' => [
                 'rss' => $baseUrl.'/feed/'.$digest->uuid,
                 'html' => $baseUrl.'/feed/'.$digest->uuid.'/{date}',
