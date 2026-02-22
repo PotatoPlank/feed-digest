@@ -1,7 +1,7 @@
 name: Upload latest image to Registry
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 on:
@@ -24,7 +24,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: lowercase github.repository_owner
         run: |
