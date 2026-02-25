@@ -96,13 +96,15 @@ Payload:
   "name": "My Digest",
   "timezone": "UTC",
   "filters": ["+#\"gaming\"", "-author:\"bob smith\""],
-  "only_prior_to_today": true
+  "only_prior_to_today": true,
+  "max_days": 7
 }
 ```
 
 Notes:
 - When creating a digest, either `feed_url` or `name` must be unique.
 - `only_prior_to_today` defaults to `true` and limits digests to entries dated before today.
+- `max_days` limits how many days are returned in the public RSS digest.
 
 ### Update a digest
 
@@ -154,6 +156,7 @@ Digest outputs are cached in `storage/app/digests` using the TTL defined in `con
 
 - Set `cache.ttl` to `0` to disable caching.
 - Supported units: `minutes`, `hours`, `days`.
+- Updating a digest clears the cached outputs for that digest.
 
 ## Testing
 

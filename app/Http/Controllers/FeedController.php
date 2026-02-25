@@ -32,7 +32,7 @@ class FeedController extends Controller
                 $digest->filters ?? [],
                 $digest->only_prior_to_today ?? true
             );
-            $groupsByDate = $result['groupsByDate'];
+            $groupsByDate = $this->limitGroupsByDate($result['groupsByDate'], $digest->max_days);
             $feedTitle = $nameOverride !== '' ? $nameOverride : ($digest->name ?: $result['title']);
         } catch (Throwable $exception) {
             return response()->json([
@@ -121,6 +121,10 @@ class FeedController extends Controller
         $channelLink = $this->escapeXml($this->buildFeedLink($digest, $nameOverride));
         $channelDescription = $this->escapeXml('Daily feed digest');
         $lastBuild = CarbonImmutable::now(config('app.timezone'))->toRfc2822String();
+        $channelPubDate = $this->resolveChannelPubDate($groupsByDate);
+        $channelPubDateXml = $channelPubDate !== null
+            ? '<pubDate>'.$this->escapeXml($channelPubDate).'</pubDate>'
+            : '';
         $itemsXml = $this->buildRssItems($groupsByDate, $digest, $baseTitle, $nameOverride);
 
         return <<<XML
@@ -131,6 +135,7 @@ class FeedController extends Controller
         <link>{$channelLink}</link>
         <description>{$channelDescription}</description>
         <lastBuildDate>{$lastBuild}</lastBuildDate>
+        {$channelPubDateXml}
         {$itemsXml}
     </channel>
 </rss>
@@ -276,18 +281,83 @@ HTML;
             $guid = sprintf('%s:%s', $digest->uuid, $date);
             $html = $this->buildDigestHtml($groups);
             $link = $this->buildDateLink($digest, $date, $nameOverride);
+            $categoriesXml = $this->buildItemCategoriesXml($groups);
 
             $items[] = sprintf(
-                '<item><title>%s</title><link>%s</link><guid isPermaLink="false">%s</guid><pubDate>%s</pubDate><description><![CDATA[%s]]></description></item>',
+                '<item><title>%s</title><link>%s</link><guid isPermaLink="false">%s</guid><pubDate>%s</pubDate>%s<description><![CDATA[%s]]></description></item>',
                 $this->escapeXml($itemTitle),
                 $this->escapeXml($link),
                 $this->escapeXml($guid),
                 $dateInstance->toRfc2822String(),
+                $categoriesXml,
                 $html
             );
         }
 
         return implode("\n        ", $items);
+    }
+
+    /**
+     * @param  array<string, array<string, array<int, array<string, mixed>>>>  $groupsByDate
+     */
+    private function resolveChannelPubDate(array $groupsByDate): ?string
+    {
+        $latest = null;
+
+        foreach ($groupsByDate as $groups) {
+            foreach ($groups as $entries) {
+                foreach ($entries as $entry) {
+                    $publishedAt = $entry['published_at'] ?? null;
+
+                    if (! is_string($publishedAt) || $publishedAt === '') {
+                        continue;
+                    }
+
+                    try {
+                        $parsed = CarbonImmutable::parse($publishedAt);
+                    } catch (Throwable) {
+                        continue;
+                    }
+
+                    if (! $latest instanceof CarbonImmutable || $parsed->greaterThan($latest)) {
+                        $latest = $parsed;
+                    }
+                }
+            }
+        }
+
+        return $latest?->toRfc2822String();
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $groups
+     */
+    private function buildItemCategoriesXml(array $groups): string
+    {
+        $categories = [];
+
+        foreach ($groups as $entries) {
+            foreach ($entries as $entry) {
+                foreach (($entry['categories'] ?? []) as $category) {
+                    $value = trim((string) $category);
+
+                    if ($value !== '') {
+                        $categories[] = $value;
+                    }
+                }
+            }
+        }
+
+        if ($categories === []) {
+            return '';
+        }
+
+        $categories = array_values(array_unique($categories));
+
+        return implode('', array_map(
+            fn (string $category): string => '<category>'.$this->escapeXml($category).'</category>',
+            $categories
+        ));
     }
 
     private function buildDateLink(Digest $digest, string $date, string $nameOverride): string
@@ -313,6 +383,18 @@ HTML;
         $query = $nameOverride !== '' ? '?'.http_build_query(['name' => $nameOverride]) : '';
 
         return $baseUrl.'/feed/'.$digest->uuid.$query;
+    }
+
+    /**
+     * @param  array<string, array<string, array<int, array<string, mixed>>>>  $groupsByDate
+     */
+    private function limitGroupsByDate(array $groupsByDate, ?int $maxDays): array
+    {
+        if ($maxDays === null || $maxDays <= 0) {
+            return $groupsByDate;
+        }
+
+        return array_slice($groupsByDate, 0, $maxDays, true);
     }
 
     /**

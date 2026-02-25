@@ -22,6 +22,7 @@ class DigestFactory extends Factory
             'timezone' => 'UTC',
             'filters' => [],
             'only_prior_to_today' => true,
+            'max_days' => null,
         ];
     }
 }

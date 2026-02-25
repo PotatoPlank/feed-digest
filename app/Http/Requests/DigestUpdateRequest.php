@@ -25,6 +25,7 @@ class DigestUpdateRequest extends FormRequest
             'filters' => ['nullable', 'array'],
             'filters.*' => ['string'],
             'only_prior_to_today' => ['boolean'],
+            'max_days' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }

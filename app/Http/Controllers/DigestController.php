@@ -7,6 +7,7 @@ use App\Http\Requests\DigestUpdateRequest;
 use App\Models\Digest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Storage;
 
 class DigestController extends Controller
 {
@@ -32,6 +33,7 @@ class DigestController extends Controller
     {
         $digest->fill($request->validated());
         $digest->save();
+        $this->clearDigestCache($digest);
 
         return response()->json($this->serializeDigest($digest));
     }
@@ -57,10 +59,49 @@ class DigestController extends Controller
             'timezone' => $digest->timezone,
             'filters' => $digest->filters ?? [],
             'only_prior_to_today' => $digest->only_prior_to_today,
+            'max_days' => $digest->max_days,
             'links' => [
                 'rss' => $baseUrl.'/feed/'.$digest->uuid,
                 'html' => $baseUrl.'/feed/'.$digest->uuid.'/{date}',
             ],
         ];
+    }
+
+    private function clearDigestCache(Digest $digest): void
+    {
+        $disk = Storage::disk('local');
+        $paths = $disk->files('digests');
+
+        if ($paths === []) {
+            return;
+        }
+
+        $prefixes = [
+            'digests/rss_'.$digest->uuid.'_',
+            'digests/html_'.$digest->uuid.'_',
+        ];
+
+        $matches = array_values(array_filter(
+            $paths,
+            fn (string $path): bool => $this->matchesAnyPrefix($path, $prefixes)
+        ));
+
+        if ($matches !== []) {
+            $disk->delete($matches);
+        }
+    }
+
+    /**
+     * @param  array<int, string>  $prefixes
+     */
+    private function matchesAnyPrefix(string $path, array $prefixes): bool
+    {
+        foreach ($prefixes as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

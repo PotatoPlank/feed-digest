@@ -2,6 +2,7 @@
 
 use App\Models\Digest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -21,6 +22,7 @@ test('creates a digest and returns its uuid', function () {
         'name' => 'Example Digest',
         'timezone' => 'UTC',
         'filters' => ['+#"gaming"', '-author:"jim jones"'],
+        'max_days' => 3,
     ];
 
     $response = $this->postJson('/api/digests', $payload, [
@@ -37,6 +39,7 @@ test('creates a digest and returns its uuid', function () {
         'feed_url' => 'https://example.com/feed.xml',
         'name' => 'Example Digest',
         'timezone' => 'UTC',
+        'max_days' => 3,
     ]);
 });
 
@@ -103,6 +106,7 @@ test('updates a digest', function () {
 
     $response = $this->putJson('/api/digests/'.$digest->uuid, [
         'name' => 'New Name',
+        'max_days' => 5,
     ], [
         'Authorization' => 'Bearer test-token',
     ]);
@@ -111,7 +115,33 @@ test('updates a digest', function () {
     $this->assertDatabaseHas('digests', [
         'uuid' => $digest->uuid,
         'name' => 'New Name',
+        'max_days' => 5,
     ]);
+});
+
+test('clears cached digests when updating', function () {
+    config()->set('services.feed.token', 'test-token');
+
+    Storage::fake('local');
+
+    $digest = Digest::factory()->create();
+    $otherDigest = Digest::factory()->create();
+
+    Storage::disk('local')->put('digests/rss_'.$digest->uuid.'_1_abc.xml', 'cached');
+    Storage::disk('local')->put('digests/html_'.$digest->uuid.'_2026-02-25_1_abc.html', 'cached');
+    Storage::disk('local')->put('digests/rss_'.$otherDigest->uuid.'_1_abc.xml', 'keep');
+
+    $response = $this->putJson('/api/digests/'.$digest->uuid, [
+        'name' => 'Updated Name',
+    ], [
+        'Authorization' => 'Bearer test-token',
+    ]);
+
+    $response->assertOk();
+
+    Storage::disk('local')->assertMissing('digests/rss_'.$digest->uuid.'_1_abc.xml');
+    Storage::disk('local')->assertMissing('digests/html_'.$digest->uuid.'_2026-02-25_1_abc.html');
+    Storage::disk('local')->assertExists('digests/rss_'.$otherDigest->uuid.'_1_abc.xml');
 });
 
 test('deletes a digest', function () {

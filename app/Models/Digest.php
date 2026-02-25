@@ -25,6 +25,7 @@ class Digest extends Model
         'timezone',
         'filters',
         'only_prior_to_today',
+        'max_days',
     ];
 
     protected function casts(): array
@@ -32,6 +33,7 @@ class Digest extends Model
         return [
             'filters' => 'array',
             'only_prior_to_today' => 'boolean',
+            'max_days' => 'integer',
         ];
     }
 }
