@@ -26,6 +26,8 @@ class Digest extends Model
         'filters',
         'only_prior_to_today',
         'max_days',
+        'is_weekly_digest',
+        'week_starts_on',
     ];
 
     protected function casts(): array
@@ -34,6 +36,7 @@ class Digest extends Model
             'filters' => 'array',
             'only_prior_to_today' => 'boolean',
             'max_days' => 'integer',
+            'is_weekly_digest' => 'boolean',
         ];
     }
 }

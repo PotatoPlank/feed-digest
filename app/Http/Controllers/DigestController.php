@@ -60,6 +60,8 @@ class DigestController extends Controller
             'filters' => $digest->filters ?? [],
             'only_prior_to_today' => $digest->only_prior_to_today,
             'max_days' => $digest->max_days,
+            'is_weekly_digest' => $digest->is_weekly_digest,
+            'week_starts_on' => $digest->week_starts_on,
             'links' => [
                 'rss' => $baseUrl.'/feed/'.$digest->uuid,
                 'html' => $baseUrl.'/feed/'.$digest->uuid.'/{date}',
@@ -78,6 +80,7 @@ class DigestController extends Controller
 
         $prefixes = [
             'digests/rss_'.$digest->uuid.'_',
+            'digests/rss_weekly_'.$digest->uuid.'_',
             'digests/html_'.$digest->uuid.'_',
         ];
 

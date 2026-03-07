@@ -17,7 +17,19 @@ class FeedController extends Controller
     {
         $timezone = $digest->timezone ?: config('app.timezone');
         $nameOverride = trim($request->string('name')->toString());
-        $cachePath = $this->buildRssCachePath($digest, $nameOverride);
+        $weeklyWindow = null;
+
+        if ($this->isWeeklyDigest($digest)) {
+            $weeklyWindow = $this->resolvePriorCompletedWeekRange($digest, $timezone);
+
+            if ($weeklyWindow === null) {
+                return response()->json([
+                    'message' => 'Weekly digests require a valid week_starts_on day name.',
+                ], 422);
+            }
+        }
+
+        $cachePath = $this->resolveRssCachePath($digest, $nameOverride, $weeklyWindow, $timezone);
 
         if ($cachePath !== null && $this->isCacheFresh($cachePath)) {
             return response(file_get_contents($cachePath) ?: '', 200, [
@@ -26,12 +38,24 @@ class FeedController extends Controller
         }
 
         try {
-            $result = $aggregator->aggregateByDate(
-                $digest->feed_url,
-                $timezone,
-                $digest->filters ?? [],
-                $digest->only_prior_to_today ?? true
-            );
+            if ($weeklyWindow === null) {
+                $result = $aggregator->aggregateByDate(
+                    $digest->feed_url,
+                    $timezone,
+                    $digest->filters ?? [],
+                    $digest->only_prior_to_today ?? true
+                );
+            } else {
+                $result = $aggregator->aggregateByDateWithinRange(
+                    $digest->feed_url,
+                    $timezone,
+                    $weeklyWindow['start'],
+                    $weeklyWindow['end'],
+                    $digest->filters ?? [],
+                    $digest->only_prior_to_today ?? true
+                );
+            }
+
             $groupsByDate = $this->limitGroupsByDate($result['groupsByDate'], $digest->max_days);
             $feedTitle = $nameOverride !== '' ? $nameOverride : ($digest->name ?: $result['title']);
         } catch (Throwable $exception) {
@@ -40,7 +64,13 @@ class FeedController extends Controller
             ], 422);
         }
 
-        $rss = $this->buildRssDigest($digest, $feedTitle ?? '', $nameOverride, $groupsByDate);
+        $rss = $this->buildRssDigest(
+            $digest,
+            $feedTitle ?? '',
+            $nameOverride,
+            $groupsByDate,
+            $weeklyWindow !== null
+        );
 
         if ($cachePath !== null && $this->hasEntriesByDate($groupsByDate)) {
             $this->writeCache($cachePath, $rss);
@@ -112,12 +142,14 @@ class FeedController extends Controller
         Digest $digest,
         string $feedTitle,
         string $nameOverride,
-        array $groupsByDate
+        array $groupsByDate,
+        bool $isWeeklyDigest = false
     ): string {
         $appName = (string) config('app.name', 'RSS Feed Digest');
         $baseTitle = $feedTitle !== '' ? $feedTitle : $appName;
+        $digestLabel = $isWeeklyDigest ? 'Weekly Digest' : 'Daily Digest';
 
-        $channelTitle = $this->escapeXml($baseTitle.' | RSS Digest');
+        $channelTitle = $this->escapeXml($baseTitle.' | '.$digestLabel);
         $channelLink = $this->escapeXml($this->buildFeedLink($digest, $nameOverride));
         $channelDescription = $this->escapeXml('RSS feed digest');
         $lastBuild = CarbonImmutable::now(config('app.timezone'))->toRfc2822String();
@@ -437,6 +469,22 @@ HTML;
         );
     }
 
+    private function buildWeeklyRssCachePath(
+        Digest $digest,
+        string $nameOverride,
+        CarbonImmutable $priorWeekStart
+    ): ?string {
+        return $this->buildCachePath(
+            sprintf(
+                'rss_weekly_%s_%s_%s_%s.xml',
+                $digest->uuid,
+                $priorWeekStart->toDateString(),
+                $digest->updated_at?->timestamp ?? 0,
+                $this->hashCacheKey($nameOverride)
+            )
+        );
+    }
+
     private function buildHtmlCachePath(Digest $digest, CarbonImmutable $date, string $nameOverride): ?string
     {
         return $this->buildCachePath(
@@ -453,6 +501,100 @@ HTML;
     private function hashCacheKey(string $value): string
     {
         return sha1($value);
+    }
+
+    private function isWeeklyDigest(Digest $digest): bool
+    {
+        return (bool) ($digest->is_weekly_digest ?? false);
+    }
+
+    /**
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable, week_start_day: string}|null  $weeklyWindow
+     */
+    private function resolveRssCachePath(
+        Digest $digest,
+        string $nameOverride,
+        ?array $weeklyWindow,
+        string $timezone
+    ): ?string {
+        if ($weeklyWindow === null) {
+            return $this->buildRssCachePath($digest, $nameOverride);
+        }
+
+        if (! $this->shouldCacheWeeklyDigestToday($weeklyWindow['week_start_day'], $timezone)) {
+            return null;
+        }
+
+        return $this->buildWeeklyRssCachePath($digest, $nameOverride, $weeklyWindow['start']);
+    }
+
+    private function shouldCacheWeeklyDigestToday(string $weekStartDay, string $timezone): bool
+    {
+        return CarbonImmutable::now($timezone)->englishDayOfWeek === $weekStartDay;
+    }
+
+    /**
+     * @return array{start: CarbonImmutable, end: CarbonImmutable, week_start_day: string}|null
+     */
+    private function resolvePriorCompletedWeekRange(Digest $digest, string $timezone): ?array
+    {
+        $weekStartDay = $this->normalizeWeekStartDay($digest->week_starts_on);
+
+        if ($weekStartDay === null) {
+            return null;
+        }
+
+        $now = CarbonImmutable::now($timezone);
+        $currentWeekStart = $this->startOfWeekByDay($now, $weekStartDay);
+        $priorWeekStart = $currentWeekStart->subWeek();
+
+        return [
+            'start' => $priorWeekStart,
+            'end' => $currentWeekStart,
+            'week_start_day' => $weekStartDay,
+        ];
+    }
+
+    private function startOfWeekByDay(CarbonImmutable $date, string $weekStartDay): CarbonImmutable
+    {
+        $startDayNumber = $this->weekDayNumber($weekStartDay);
+        $daysSinceWeekStart = ($date->dayOfWeek - $startDayNumber + 7) % 7;
+
+        return $date->subDays($daysSinceWeekStart)->startOfDay();
+    }
+
+    private function weekDayNumber(string $dayName): int
+    {
+        return match ($dayName) {
+            'Sunday' => CarbonImmutable::SUNDAY,
+            'Monday' => CarbonImmutable::MONDAY,
+            'Tuesday' => CarbonImmutable::TUESDAY,
+            'Wednesday' => CarbonImmutable::WEDNESDAY,
+            'Thursday' => CarbonImmutable::THURSDAY,
+            'Friday' => CarbonImmutable::FRIDAY,
+            'Saturday' => CarbonImmutable::SATURDAY,
+            default => CarbonImmutable::SUNDAY,
+        };
+    }
+
+    private function normalizeWeekStartDay(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $normalized = ucfirst(strtolower(trim($value)));
+        $allowedDays = [
+            'Sunday',
+            'Monday',
+            'Tuesday',
+            'Wednesday',
+            'Thursday',
+            'Friday',
+            'Saturday',
+        ];
+
+        return in_array($normalized, $allowedDays, true) ? $normalized : null;
     }
 
     private function buildCachePath(string $filename): ?string

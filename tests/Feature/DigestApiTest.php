@@ -40,7 +40,38 @@ test('creates a digest and returns its uuid', function () {
         'name' => 'Example Digest',
         'timezone' => 'UTC',
         'max_days' => 3,
+        'is_weekly_digest' => false,
+        'week_starts_on' => null,
     ]);
+});
+
+test('requires week starts on when weekly digest is enabled', function () {
+    config()->set('services.feed.token', 'test-token');
+
+    $response = $this->postJson('/api/digests', [
+        'feed_url' => 'https://example.com/feed.xml',
+        'is_weekly_digest' => true,
+    ], [
+        'Authorization' => 'Bearer test-token',
+    ]);
+
+    $response->assertUnprocessable();
+    $response->assertJsonValidationErrors(['week_starts_on']);
+});
+
+test('rejects invalid week starts on values', function () {
+    config()->set('services.feed.token', 'test-token');
+
+    $response = $this->postJson('/api/digests', [
+        'feed_url' => 'https://example.com/feed.xml',
+        'is_weekly_digest' => true,
+        'week_starts_on' => 'Funday',
+    ], [
+        'Authorization' => 'Bearer test-token',
+    ]);
+
+    $response->assertUnprocessable();
+    $response->assertJsonValidationErrors(['week_starts_on']);
 });
 
 test('requires a unique feed url or name when creating a digest', function () {
@@ -106,6 +137,8 @@ test('updates a digest', function () {
 
     $response = $this->putJson('/api/digests/'.$digest->uuid, [
         'name' => 'New Name',
+        'is_weekly_digest' => true,
+        'week_starts_on' => 'sunday',
         'max_days' => 5,
     ], [
         'Authorization' => 'Bearer test-token',
@@ -115,7 +148,32 @@ test('updates a digest', function () {
     $this->assertDatabaseHas('digests', [
         'uuid' => $digest->uuid,
         'name' => 'New Name',
+        'is_weekly_digest' => true,
+        'week_starts_on' => 'Sunday',
         'max_days' => 5,
+    ]);
+});
+
+test('clears week starts on when weekly digest is disabled', function () {
+    config()->set('services.feed.token', 'test-token');
+
+    $digest = Digest::factory()->create([
+        'is_weekly_digest' => true,
+        'week_starts_on' => 'Monday',
+    ]);
+
+    $response = $this->putJson('/api/digests/'.$digest->uuid, [
+        'is_weekly_digest' => false,
+    ], [
+        'Authorization' => 'Bearer test-token',
+    ]);
+
+    $response->assertOk();
+
+    $this->assertDatabaseHas('digests', [
+        'uuid' => $digest->uuid,
+        'is_weekly_digest' => false,
+        'week_starts_on' => null,
     ]);
 });
 
@@ -128,6 +186,7 @@ test('clears cached digests when updating', function () {
     $otherDigest = Digest::factory()->create();
 
     Storage::disk('local')->put('digests/rss_'.$digest->uuid.'_1_abc.xml', 'cached');
+    Storage::disk('local')->put('digests/rss_weekly_'.$digest->uuid.'_2026-03-01_1_abc.xml', 'cached');
     Storage::disk('local')->put('digests/html_'.$digest->uuid.'_2026-02-25_1_abc.html', 'cached');
     Storage::disk('local')->put('digests/rss_'.$otherDigest->uuid.'_1_abc.xml', 'keep');
 
@@ -140,6 +199,7 @@ test('clears cached digests when updating', function () {
     $response->assertOk();
 
     Storage::disk('local')->assertMissing('digests/rss_'.$digest->uuid.'_1_abc.xml');
+    Storage::disk('local')->assertMissing('digests/rss_weekly_'.$digest->uuid.'_2026-03-01_1_abc.xml');
     Storage::disk('local')->assertMissing('digests/html_'.$digest->uuid.'_2026-02-25_1_abc.html');
     Storage::disk('local')->assertExists('digests/rss_'.$otherDigest->uuid.'_1_abc.xml');
 });

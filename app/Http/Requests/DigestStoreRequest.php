@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Digest;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class DigestStoreRequest extends FormRequest
 {
@@ -27,7 +28,32 @@ class DigestStoreRequest extends FormRequest
             'filters.*' => ['string'],
             'only_prior_to_today' => ['boolean'],
             'max_days' => ['nullable', 'integer', 'min:1'],
+            'is_weekly_digest' => ['boolean'],
+            'week_starts_on' => [
+                'nullable',
+                'string',
+                Rule::in($this->allowedWeekStartDays()),
+                'required_if:is_weekly_digest,true',
+            ],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $weeklyDigestEnabled = $this->boolean('is_weekly_digest');
+        $weekStartsOn = $this->normalizeWeekStartsOn($this->input('week_starts_on'));
+
+        if (! $weeklyDigestEnabled) {
+            $this->merge([
+                'week_starts_on' => null,
+            ]);
+
+            return;
+        }
+
+        $this->merge([
+            'week_starts_on' => $weekStartsOn,
+        ]);
     }
 
     public function withValidator($validator): void
@@ -62,5 +88,36 @@ class DigestStoreRequest extends FormRequest
                 $validator->errors()->add('name', 'The feed name or URL must be unique.');
             }
         });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function allowedWeekStartDays(): array
+    {
+        return [
+            'Sunday',
+            'Monday',
+            'Tuesday',
+            'Wednesday',
+            'Thursday',
+            'Friday',
+            'Saturday',
+        ];
+    }
+
+    private function normalizeWeekStartsOn(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        if ($trimmed === '') {
+            return null;
+        }
+
+        return ucfirst(strtolower($trimmed));
     }
 }

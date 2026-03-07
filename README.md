@@ -13,6 +13,7 @@ The majority of this codebase was written with AI assistance and is provided as-
 - HTML view for a specific date with a clean digest layout.
 - Token-protected API for managing digests.
 - Optional filter rules for categories, authors, and summaries.
+- Optional weekly digest mode for prior-week rollups.
 - Cached outputs with configurable TTL.
 
 ## Requirements
@@ -97,7 +98,9 @@ Payload:
   "timezone": "UTC",
   "filters": ["+#\"gaming\"", "-author:\"bob smith\""],
   "only_prior_to_today": true,
-  "max_days": 7
+  "max_days": 7,
+  "is_weekly_digest": false,
+  "week_starts_on": null
 }
 ```
 
@@ -105,6 +108,9 @@ Notes:
 - When creating a digest, either `feed_url` or `name` must be unique.
 - `only_prior_to_today` defaults to `true` and limits digests to entries dated before today.
 - `max_days` limits how many days are returned in the public RSS digest.
+- `is_weekly_digest` defaults to `false`.
+- When `is_weekly_digest` is `true`, `week_starts_on` is required and must be one of: `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`.
+- Weekly digests return entries from the prior completed week based on `week_starts_on`.
 
 ### Update a digest
 
@@ -118,7 +124,9 @@ Payload fields are the same as `POST /api/digests`, but all are optional.
 
 ## Public Feeds
 
-- `GET /feed/{uuid}` returns an RSS feed (one item per day).
+- `GET /feed/{uuid}` returns an RSS feed.
+- Daily digests return one item per day.
+- Weekly digests return one item per day for dates in the prior completed week.
 - `GET /feed/{uuid}/{YYYY-MM-DD}` returns an HTML digest for the specified date.
 
 Optional query parameter:
@@ -157,6 +165,7 @@ Digest outputs are cached in `storage/app/digests` using the TTL defined in `con
 - Set `cache.ttl` to `0` to disable caching.
 - Supported units: `minutes`, `hours`, `days`.
 - Updating a digest clears the cached outputs for that digest.
+- Weekly digest RSS output is only cached on the configured `week_starts_on` day.
 
 ## Testing
 

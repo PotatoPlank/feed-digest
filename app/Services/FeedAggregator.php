@@ -92,6 +92,64 @@ class FeedAggregator
     }
 
     /**
+     * @param  array<int, string>  $filters
+     * @return array{title: string, groupsByDate: array<string, array<string, array<int, array<string, mixed>>>>}
+     */
+    public function aggregateByDateWithinRange(
+        string $url,
+        string $timezone,
+        CarbonImmutable $startsAtInclusive,
+        CarbonImmutable $endsAtExclusive,
+        array $filters = [],
+        bool $onlyPriorToToday = true
+    ): array {
+        $xml = $this->fetchXml($url);
+        $items = $this->extractItems($xml, $timezone);
+        $feedTitle = $this->extractFeedTitle($xml);
+        $grouped = [];
+        $filterConfig = $this->parseFilters($filters);
+
+        if ($onlyPriorToToday) {
+            $items = $this->filterPriorToToday($items, $timezone);
+        }
+
+        $items = array_values(array_filter($items, function (array $item) use ($startsAtInclusive, $endsAtExclusive): bool {
+            $publishedAt = $item['published_at'] ?? null;
+
+            if (! $publishedAt instanceof CarbonImmutable) {
+                return false;
+            }
+
+            return $publishedAt->greaterThanOrEqualTo($startsAtInclusive)
+                && $publishedAt->lessThan($endsAtExclusive);
+        }));
+
+        $items = $this->applyFilters($items, $filterConfig);
+
+        foreach ($items as $item) {
+            $publishedAt = $item['published_at'];
+
+            if (! $publishedAt instanceof CarbonImmutable) {
+                continue;
+            }
+
+            $dateKey = $publishedAt->toDateString();
+            $grouped[$dateKey][] = $item;
+        }
+
+        foreach ($grouped as $date => $entries) {
+            $grouped[$date] = $this->groupByCategory($entries, $filterConfig);
+        }
+
+        krsort($grouped, SORT_NATURAL);
+
+        return [
+            'title' => $feedTitle,
+            'groupsByDate' => $grouped,
+        ];
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $items
      * @return array<int, array<string, mixed>>
      */

@@ -4,6 +4,7 @@ use App\Models\Digest;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -167,4 +168,117 @@ XML;
     $response->assertHeader('Content-Type', 'text/html; charset=UTF-8');
     $response->assertSee('Today Tech');
     $response->assertSee('<title>Example Feed | '.$today->toDateString().'</title>', false);
+});
+
+test('weekly digests return entries from the prior completed week only', function () {
+    config()->set('app.url', 'http://example.test');
+    config()->set('app.timezone', 'UTC');
+
+    $now = CarbonImmutable::create(2026, 3, 9, 10, 0, 0, 'UTC');
+    CarbonImmutable::setTestNow($now);
+
+    $digest = Digest::factory()->create([
+        'feed_url' => 'https://example.com/feed.xml',
+        'name' => 'Weekly Digest',
+        'timezone' => 'UTC',
+        'only_prior_to_today' => false,
+        'is_weekly_digest' => true,
+        'week_starts_on' => 'Sunday',
+    ]);
+
+    $priorWeekItem = CarbonImmutable::create(2026, 3, 7, 12, 0, 0, 'UTC');
+    $currentWeekItem = CarbonImmutable::create(2026, 3, 8, 12, 0, 0, 'UTC');
+
+    $xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Prior Week Item</title>
+            <link>https://example.com/prior-week</link>
+            <pubDate>{$priorWeekItem->toRfc2822String()}</pubDate>
+            <category>Tech</category>
+        </item>
+        <item>
+            <title>Current Week Item</title>
+            <link>https://example.com/current-week</link>
+            <pubDate>{$currentWeekItem->toRfc2822String()}</pubDate>
+            <category>News</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    Http::fake([
+        '*' => Http::response($xml, 200),
+    ]);
+
+    $response = $this->get('/feed/'.$digest->uuid);
+
+    $response->assertOk();
+    $rss = simplexml_load_string($response->getContent(), 'SimpleXMLElement', LIBXML_NOCDATA);
+
+    expect($rss)->not->toBeFalse();
+    expect(count($rss->channel->item))->toBe(1);
+    expect((string) $rss->channel->item[0]->title)->toBe('Weekly Digest | 2026-03-07');
+
+    CarbonImmutable::setTestNow();
+});
+
+test('weekly digest rss cache is only written on the configured week start day', function () {
+    config()->set('app.timezone', 'UTC');
+    config()->set('digest.cache.ttl', 60);
+    config()->set('digest.cache.unit', 'minutes');
+
+    Storage::fake('local');
+
+    $digest = Digest::factory()->create([
+        'feed_url' => 'https://example.com/feed.xml',
+        'timezone' => 'UTC',
+        'only_prior_to_today' => false,
+        'is_weekly_digest' => true,
+        'week_starts_on' => 'Sunday',
+    ]);
+
+    $priorWeekItem = CarbonImmutable::create(2026, 3, 7, 12, 0, 0, 'UTC');
+
+    $xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Prior Week Item</title>
+            <link>https://example.com/prior-week</link>
+            <pubDate>{$priorWeekItem->toRfc2822String()}</pubDate>
+            <category>Tech</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    Http::fake([
+        '*' => Http::response($xml, 200),
+    ]);
+
+    CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 3, 8, 9, 0, 0, 'UTC'));
+    $this->get('/feed/'.$digest->uuid)->assertOk();
+
+    $cachedOnWeekStartDay = collect(Storage::disk('local')->files('digests'))
+        ->contains(fn (string $path): bool => str_starts_with($path, 'digests/rss_weekly_'.$digest->uuid.'_'));
+
+    expect($cachedOnWeekStartDay)->toBeTrue();
+
+    Storage::disk('local')->deleteDirectory('digests');
+
+    CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 3, 9, 9, 0, 0, 'UTC'));
+    $this->get('/feed/'.$digest->uuid)->assertOk();
+
+    $cachedOnNonWeekStartDay = collect(Storage::disk('local')->files('digests'))
+        ->contains(fn (string $path): bool => str_starts_with($path, 'digests/rss_weekly_'.$digest->uuid.'_'));
+
+    expect($cachedOnNonWeekStartDay)->toBeFalse();
+
+    CarbonImmutable::setTestNow();
 });
