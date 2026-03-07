@@ -84,7 +84,7 @@ class FeedController extends Controller
                 $digest->only_prior_to_today ?? true
             );
             $feedTitle = $nameOverride !== '' ? $nameOverride : ($digest->name ?: $result['title']);
-            $baseTitle = $feedTitle !== '' ? $feedTitle : (string) config('app.name', 'Daily Feed Aggregator');
+            $baseTitle = $feedTitle !== '' ? $feedTitle : (string) config('app.name', 'RSS Feed Digest');
         } catch (Throwable $exception) {
             return response()->json([
                 'message' => $exception->getMessage(),
@@ -114,12 +114,12 @@ class FeedController extends Controller
         string $nameOverride,
         array $groupsByDate
     ): string {
-        $appName = (string) config('app.name', 'Daily Feed Aggregator');
+        $appName = (string) config('app.name', 'RSS Feed Digest');
         $baseTitle = $feedTitle !== '' ? $feedTitle : $appName;
 
-        $channelTitle = $this->escapeXml($baseTitle.' | Daily Digest');
+        $channelTitle = $this->escapeXml($baseTitle.' | RSS Digest');
         $channelLink = $this->escapeXml($this->buildFeedLink($digest, $nameOverride));
-        $channelDescription = $this->escapeXml('Daily feed digest');
+        $channelDescription = $this->escapeXml('RSS feed digest');
         $lastBuild = CarbonImmutable::now(config('app.timezone'))->toRfc2822String();
         $channelPubDate = $this->resolveChannelPubDate($groupsByDate);
         $channelPubDateXml = $channelPubDate !== null

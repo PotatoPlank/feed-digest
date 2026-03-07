@@ -1,6 +1,6 @@
-# Daily Feed Digest
+# RSS Feed Digest
 
-Daily Feed Digest turns an RSS or Atom feed into daily digests. It exposes a public RSS feed (one item per day), HTML digests for specific dates, and a small authenticated API to manage digest definitions.
+RSS Feed Digest turns an RSS or Atom feed into digests. It exposes a public RSS feed (one item per day), HTML digests for specific dates, and a small authenticated API to manage digest definitions.
 
 ## Disclaimer
 
@@ -8,7 +8,7 @@ The majority of this codebase was written with AI assistance and is provided as-
 
 ## Features
 
-- Aggregate RSS or Atom feeds into daily digests grouped by category.
+- Aggregate RSS or Atom feeds into digests grouped by category.
 - Public RSS output with one item per day.
 - HTML view for a specific date with a clean digest layout.
 - Token-protected API for managing digests.
