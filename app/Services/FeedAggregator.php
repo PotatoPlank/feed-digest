@@ -144,7 +144,7 @@ class FeedAggregator
         }));
 
         $items = $this->applyFilters($items, $filterConfig);
-        $dateKey = $startsAtInclusive->toDateString();
+        $dateKey = $endsAtExclusive->toDateString();
 
         foreach ($items as $item) {
             $publishedAt = $item['published_at'];
@@ -160,7 +160,7 @@ class FeedAggregator
 
         return [
             'title' => $feedTitle,
-            'groupsByDate' => $this->groupByCategory($grouped[$dateKey], $filterConfig),
+            'groupsByDate' => [$dateKey => $this->groupByCategory($grouped[$dateKey], $filterConfig)],
             'groups' => $this->groupByCategory($grouped[$dateKey], $filterConfig),
         ];
     }
