@@ -31,7 +31,8 @@ class FeedController extends Controller
 
         $cachePath = $this->resolveRssCachePath($digest, $nameOverride, $weeklyWindow, $timezone);
 
-        if ($cachePath !== null && $this->isCacheFresh($cachePath)) {
+        $loadedCachedWeekly = $cachePath !== null && file_exists($cachePath) && $this->isWeeklyDigest($digest) && ! $this->shouldCacheWeeklyDigestToday($weeklyWindow['week_start_day'], $timezone);
+        if ($cachePath !== null && ($this->isCacheFresh($cachePath) || $loadedCachedWeekly)) {
             return response(file_get_contents($cachePath) ?: '', 200, [
                 'Content-Type' => 'application/rss+xml; charset=UTF-8',
             ]);
@@ -43,7 +44,8 @@ class FeedController extends Controller
                     $digest->feed_url,
                     $timezone,
                     $digest->filters ?? [],
-                    $digest->only_prior_to_today ?? true
+                    $digest->only_prior_to_today ?? true,
+                    $digest->is_paginated_feed ?? false
                 );
             } else {
                 $result = $aggregator->aggregateByDateWithinRange(
@@ -52,7 +54,8 @@ class FeedController extends Controller
                     $weeklyWindow['start'],
                     $weeklyWindow['end'],
                     $digest->filters ?? [],
-                    $digest->only_prior_to_today ?? true
+                    $digest->only_prior_to_today ?? true,
+                    $digest->is_paginated_feed ?? false
                 );
             }
 
@@ -95,9 +98,21 @@ class FeedController extends Controller
             ], 422);
         }
 
+        $weeklyWindow = null;
+
+        if ($this->isWeeklyDigest($digest)) {
+            $weeklyWindow = $this->resolvePriorCompletedWeekRange($digest, $timezone);
+
+            if ($weeklyWindow === null) {
+                return response()->json([
+                    'message' => 'Weekly digests require a valid week_starts_on day name.',
+                ], 422);
+            }
+        }
+
         $date = CarbonImmutable::parse($dateInput, $timezone);
         $nameOverride = trim($request->string('name')->toString());
-        $cachePath = $this->buildHtmlCachePath($digest, $date, $nameOverride);
+        $cachePath = $this->buildHtmlCachePath($digest, $date, $nameOverride, $weeklyWindow, $timezone);
 
         if ($cachePath !== null && $this->isCacheFresh($cachePath)) {
             return response(file_get_contents($cachePath) ?: '', 200, [
@@ -106,13 +121,27 @@ class FeedController extends Controller
         }
 
         try {
-            $result = $aggregator->aggregateForDate(
-                $digest->feed_url,
-                $date,
-                $timezone,
-                $digest->filters ?? [],
-                $digest->only_prior_to_today ?? true
-            );
+            if ($weeklyWindow === null) {
+                $result = $aggregator->aggregateForDate(
+                    $digest->feed_url,
+                    $date,
+                    $timezone,
+                    $digest->filters ?? [],
+                    $digest->only_prior_to_today ?? true,
+                    $digest->is_paginated_feed ?? false
+                );
+            } else {
+                $result = $aggregator->aggregateByDateWithinRange(
+                    $digest->feed_url,
+                    $timezone,
+                    $weeklyWindow['start'],
+                    $weeklyWindow['end'],
+                    $digest->filters ?? [],
+                    $digest->only_prior_to_today ?? true,
+                    $digest->is_paginated_feed ?? false
+                );
+            }
+
             $feedTitle = $nameOverride !== '' ? $nameOverride : ($digest->name ?: $result['title']);
             $baseTitle = $feedTitle !== '' ? $feedTitle : (string) config('app.name', 'RSS Feed Digest');
         } catch (Throwable $exception) {
@@ -485,17 +514,45 @@ HTML;
         );
     }
 
-    private function buildHtmlCachePath(Digest $digest, CarbonImmutable $date, string $nameOverride): ?string
-    {
+    private function buildWeeklyHtmlCachePath(
+        Digest $digest,
+        string $nameOverride,
+        CarbonImmutable $priorWeekStart
+    ): ?string {
         return $this->buildCachePath(
             sprintf(
-                'html_%s_%s_%s_%s.html',
+                'html_weekly_%s_%s_%s_%s.xml',
                 $digest->uuid,
-                $date->toDateString(),
+                $priorWeekStart->toDateString(),
                 $digest->updated_at?->timestamp ?? 0,
                 $this->hashCacheKey($nameOverride)
             )
         );
+    }
+
+    private function buildHtmlCachePath(Digest $digest, CarbonImmutable $date, string $nameOverride, ?array $weeklyWindow, string $timezone): ?string
+    {
+        if($weeklyWindow === null) {
+            return $this->buildCachePath(
+                sprintf(
+                    'html_%s_%s_%s_%s.html',
+                    $digest->uuid,
+                    $date->toDateString(),
+                    $digest->updated_at?->timestamp ?? 0,
+                    $this->hashCacheKey($nameOverride)
+                )
+            );
+        }
+
+        $weekCachePath = $this->buildWeeklyHtmlCachePath($digest, $nameOverride, $weeklyWindow['start']);
+        if(! file_exists($weekCachePath)){
+            return $weekCachePath;
+        }
+        if (! $this->shouldCacheWeeklyDigestToday($weeklyWindow['week_start_day'], $timezone)) {
+            return null;
+        }
+
+        return $weekCachePath;
     }
 
     private function hashCacheKey(string $value): string
@@ -521,11 +578,15 @@ HTML;
             return $this->buildRssCachePath($digest, $nameOverride);
         }
 
+        $weekCachePath = $this->buildWeeklyRssCachePath($digest, $nameOverride, $weeklyWindow['start']);
+        if(! file_exists($weekCachePath)){
+            return $weekCachePath;
+        }
         if (! $this->shouldCacheWeeklyDigestToday($weeklyWindow['week_start_day'], $timezone)) {
             return null;
         }
 
-        return $this->buildWeeklyRssCachePath($digest, $nameOverride, $weeklyWindow['start']);
+        return $weekCachePath;
     }
 
     private function shouldCacheWeeklyDigestToday(string $weekStartDay, string $timezone): bool

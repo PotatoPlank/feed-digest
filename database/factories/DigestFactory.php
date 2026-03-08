@@ -23,6 +23,7 @@ class DigestFactory extends Factory
             'filters' => [],
             'only_prior_to_today' => true,
             'max_days' => null,
+            'is_paginated_feed' => false,
             'is_weekly_digest' => false,
             'week_starts_on' => null,
         ];

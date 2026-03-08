@@ -23,6 +23,7 @@ test('creates a digest and returns its uuid', function () {
         'timezone' => 'UTC',
         'filters' => ['+#"gaming"', '-author:"jim jones"'],
         'max_days' => 3,
+        'is_paginated_feed' => true,
     ];
 
     $response = $this->postJson('/api/digests', $payload, [
@@ -40,6 +41,7 @@ test('creates a digest and returns its uuid', function () {
         'name' => 'Example Digest',
         'timezone' => 'UTC',
         'max_days' => 3,
+        'is_paginated_feed' => true,
         'is_weekly_digest' => false,
         'week_starts_on' => null,
     ]);
@@ -137,6 +139,7 @@ test('updates a digest', function () {
 
     $response = $this->putJson('/api/digests/'.$digest->uuid, [
         'name' => 'New Name',
+        'is_paginated_feed' => true,
         'is_weekly_digest' => true,
         'week_starts_on' => 'sunday',
         'max_days' => 5,
@@ -148,6 +151,7 @@ test('updates a digest', function () {
     $this->assertDatabaseHas('digests', [
         'uuid' => $digest->uuid,
         'name' => 'New Name',
+        'is_paginated_feed' => true,
         'is_weekly_digest' => true,
         'week_starts_on' => 'Sunday',
         'max_days' => 5,

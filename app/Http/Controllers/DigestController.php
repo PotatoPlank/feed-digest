@@ -60,6 +60,7 @@ class DigestController extends Controller
             'filters' => $digest->filters ?? [],
             'only_prior_to_today' => $digest->only_prior_to_today,
             'max_days' => $digest->max_days,
+            'is_paginated_feed' => $digest->is_paginated_feed,
             'is_weekly_digest' => $digest->is_weekly_digest,
             'week_starts_on' => $digest->week_starts_on,
             'links' => [

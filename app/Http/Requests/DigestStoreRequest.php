@@ -28,6 +28,7 @@ class DigestStoreRequest extends FormRequest
             'filters.*' => ['string'],
             'only_prior_to_today' => ['boolean'],
             'max_days' => ['nullable', 'integer', 'min:1'],
+            'is_paginated_feed' => ['boolean'],
             'is_weekly_digest' => ['boolean'],
             'week_starts_on' => [
                 'nullable',

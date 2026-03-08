@@ -11,6 +11,8 @@ use Throwable;
 
 class FeedAggregator
 {
+    private const MAX_PAGINATION_PAGES = 10;
+
     /**
      * @param  array<int, string>  $filters
      * @return array{title: string, groups: array<string, array<int, array<string, mixed>>>}
@@ -20,11 +22,20 @@ class FeedAggregator
         CarbonImmutable $date,
         string $timezone,
         array $filters = [],
-        bool $onlyPriorToToday = true
+        bool $onlyPriorToToday = true,
+        bool $isPaginatedFeed = false
     ): array {
-        $xml = $this->fetchXml($url);
-        $items = $this->extractItems($xml, $timezone);
-        $feedTitle = $this->extractFeedTitle($xml);
+        $startOfDate = $date->startOfDay();
+        $endOfDate = $startOfDate->addDay();
+        $feed = $this->fetchFeedItems(
+            $url,
+            $timezone,
+            $isPaginatedFeed,
+            $startOfDate,
+            $endOfDate
+        );
+        $items = $feed['items'];
+        $feedTitle = $feed['title'];
         $targetDate = $date->toDateString();
 
         if ($onlyPriorToToday) {
@@ -54,11 +65,12 @@ class FeedAggregator
         string $url,
         string $timezone,
         array $filters = [],
-        bool $onlyPriorToToday = true
+        bool $onlyPriorToToday = true,
+        bool $isPaginatedFeed = false
     ): array {
-        $xml = $this->fetchXml($url);
-        $items = $this->extractItems($xml, $timezone);
-        $feedTitle = $this->extractFeedTitle($xml);
+        $feed = $this->fetchFeedItems($url, $timezone, $isPaginatedFeed);
+        $items = $feed['items'];
+        $feedTitle = $feed['title'];
         $grouped = [];
         $filterConfig = $this->parseFilters($filters);
 
@@ -101,11 +113,18 @@ class FeedAggregator
         CarbonImmutable $startsAtInclusive,
         CarbonImmutable $endsAtExclusive,
         array $filters = [],
-        bool $onlyPriorToToday = true
+        bool $onlyPriorToToday = true,
+        bool $isPaginatedFeed = false
     ): array {
-        $xml = $this->fetchXml($url);
-        $items = $this->extractItems($xml, $timezone);
-        $feedTitle = $this->extractFeedTitle($xml);
+        $feed = $this->fetchFeedItems(
+            $url,
+            $timezone,
+            $isPaginatedFeed,
+            $startsAtInclusive,
+            $endsAtExclusive
+        );
+        $items = $feed['items'];
+        $feedTitle = $feed['title'];
         $grouped = [];
         $filterConfig = $this->parseFilters($filters);
 
@@ -125,6 +144,7 @@ class FeedAggregator
         }));
 
         $items = $this->applyFilters($items, $filterConfig);
+        $dateKey = $startsAtInclusive->toDateString();
 
         foreach ($items as $item) {
             $publishedAt = $item['published_at'];
@@ -133,20 +153,184 @@ class FeedAggregator
                 continue;
             }
 
-            $dateKey = $publishedAt->toDateString();
             $grouped[$dateKey][] = $item;
-        }
-
-        foreach ($grouped as $date => $entries) {
-            $grouped[$date] = $this->groupByCategory($entries, $filterConfig);
         }
 
         krsort($grouped, SORT_NATURAL);
 
         return [
             'title' => $feedTitle,
-            'groupsByDate' => $grouped,
+            'groupsByDate' => $this->groupByCategory($grouped[$dateKey], $filterConfig),
+            'groups' => $this->groupByCategory($grouped[$dateKey], $filterConfig),
         ];
+    }
+
+    /**
+     * @return array{title: string, items: array<int, array<string, mixed>>}
+     */
+    private function fetchFeedItems(
+        string $url,
+        string $timezone,
+        bool $isPaginatedFeed,
+        ?CarbonImmutable $startsAtInclusive = null,
+        ?CarbonImmutable $endsAtExclusive = null
+    ): array {
+        if (! $isPaginatedFeed) {
+            $xml = $this->fetchXml($url);
+
+            return [
+                'title' => $this->extractFeedTitle($xml),
+                'items' => $this->extractItems($xml, $timezone),
+            ];
+        }
+
+        return $this->fetchPaginatedFeedItems(
+            $url,
+            $timezone,
+            $startsAtInclusive,
+            $endsAtExclusive
+        );
+    }
+
+    /**
+     * @return array{title: string, items: array<int, array<string, mixed>>}
+     */
+    private function fetchPaginatedFeedItems(
+        string $url,
+        string $timezone,
+        ?CarbonImmutable $startsAtInclusive = null,
+        ?CarbonImmutable $endsAtExclusive = null
+    ): array {
+        $page = 1;
+        $title = '';
+        $allItems = [];
+        $seenItems = [];
+
+        while ($page <= self::MAX_PAGINATION_PAGES) {
+            $xml = $this->fetchXml($this->withPagedQuery($url, $page));
+            $pageItems = $this->extractItems($xml, $timezone);
+
+            if ($title === '') {
+                $title = $this->extractFeedTitle($xml);
+            }
+
+            if ($pageItems === []) {
+                break;
+            }
+
+            $duplicateCount = 0;
+            $maxDuplicates = count($pageItems) / 2;
+            $hasOutOfRangeItems = false;
+
+            foreach ($pageItems as $item) {
+                $identity = $this->itemIdentity($item);
+
+                if (isset($seenItems[$identity])) {
+                    $duplicateCount++;
+
+                    continue;
+                }
+
+                $seenItems[$identity] = true;
+                $allItems[] = $item;
+
+                if (!$this->isAfterEndDate($item, $endsAtExclusive) && $this->isOutsideExpectedDateRange($item, $startsAtInclusive, $endsAtExclusive)) {
+                    $hasOutOfRangeItems = true;
+                }
+            }
+            if ($duplicateCount > $maxDuplicates || $hasOutOfRangeItems) {
+                break;
+            }
+
+            $page++;
+        }
+
+
+        return [
+            'title' => $title,
+            'items' => $allItems,
+        ];
+    }
+
+    private function withPagedQuery(string $url, int $page): string
+    {
+        $parts = parse_url($url);
+
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            throw new RuntimeException('Invalid feed URL.');
+        }
+
+        parse_str($parts['query'] ?? '', $query);
+        $query['paged'] = $page;
+        $parts['query'] = http_build_query($query);
+
+        return $this->buildUrlFromParts($parts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $parts
+     */
+    private function buildUrlFromParts(array $parts): string
+    {
+        $scheme = (string) ($parts['scheme'] ?? '');
+        $host = (string) ($parts['host'] ?? '');
+        $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+        $user = (string) ($parts['user'] ?? '');
+        $pass = (string) ($parts['pass'] ?? '');
+        $auth = $user === '' ? '' : $user.($pass === '' ? '' : ':'.$pass).'@';
+        $path = (string) ($parts['path'] ?? '');
+        $query = isset($parts['query']) && $parts['query'] !== '' ? '?'.$parts['query'] : '';
+        $fragment = isset($parts['fragment']) && $parts['fragment'] !== '' ? '#'.$parts['fragment'] : '';
+
+        return $scheme.'://'.$auth.$host.$port.$path.$query.$fragment;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function itemIdentity(array $item): string
+    {
+        $publishedAt = $item['published_at'] ?? null;
+        $publishedValue = $publishedAt instanceof CarbonImmutable ? $publishedAt->toIso8601String() : '';
+
+        return implode('|', [
+            trim((string) ($item['guid'] ?? '')),
+            trim((string) ($item['link'] ?? '')),
+            trim((string) ($item['title'] ?? '')),
+            $publishedValue,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function isOutsideExpectedDateRange(
+        array $item,
+        ?CarbonImmutable $startsAtInclusive,
+        ?CarbonImmutable $endsAtExclusive
+    ): bool {
+        $publishedAt = $item['published_at'] ?? null;
+
+        if (! $publishedAt instanceof CarbonImmutable) {
+            return false;
+        }
+
+        if ($startsAtInclusive instanceof CarbonImmutable && $publishedAt->lt($startsAtInclusive)) {
+            return true;
+        }
+
+        if ($endsAtExclusive instanceof CarbonImmutable && $publishedAt->greaterThanOrEqualTo($endsAtExclusive)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isAfterEndDate(array $item, ?CarbonImmutable $endsAtExclusive): bool
+    {
+        $publishedAt = $item['published_at'] ?? null;
+
+        return $endsAtExclusive instanceof CarbonImmutable && $publishedAt->greaterThanOrEqualTo($endsAtExclusive);
     }
 
     /**

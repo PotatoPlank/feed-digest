@@ -282,3 +282,168 @@ XML;
 
     CarbonImmutable::setTestNow();
 });
+
+test('paginated feeds iterate paged query until duplicate results are detected', function () {
+    config()->set('app.timezone', 'UTC');
+
+    $digest = Digest::factory()->create([
+        'feed_url' => 'https://example.com/feed.xml?source=main',
+        'timezone' => 'UTC',
+        'only_prior_to_today' => false,
+        'is_paginated_feed' => true,
+    ]);
+
+    $firstDate = CarbonImmutable::create(2026, 3, 6, 12, 0, 0, 'UTC');
+    $secondDate = CarbonImmutable::create(2026, 3, 5, 12, 0, 0, 'UTC');
+    $thirdDate = CarbonImmutable::create(2026, 3, 4, 12, 0, 0, 'UTC');
+
+    $pageOneXml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Page One Item</title>
+            <link>https://example.com/p1</link>
+            <guid>page-one</guid>
+            <pubDate>{$firstDate->toRfc2822String()}</pubDate>
+            <category>Tech</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    $pageTwoXml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Page Two Item</title>
+            <link>https://example.com/p2</link>
+            <guid>page-two</guid>
+            <pubDate>{$secondDate->toRfc2822String()}</pubDate>
+            <category>News</category>
+        </item>
+        <item>
+            <title>Page Three Item</title>
+            <link>https://example.com/p3</link>
+            <guid>page-three</guid>
+            <pubDate>{$thirdDate->toRfc2822String()}</pubDate>
+            <category>News</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    $duplicatePageXml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Page One Item</title>
+            <link>https://example.com/p1</link>
+            <guid>page-one</guid>
+            <pubDate>{$firstDate->toRfc2822String()}</pubDate>
+            <category>Tech</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    Http::fake([
+        'https://example.com/feed.xml?source=main&paged=1' => Http::response($pageOneXml, 200),
+        'https://example.com/feed.xml?source=main&paged=2' => Http::response($pageTwoXml, 200),
+        'https://example.com/feed.xml?source=main&paged=3' => Http::response($duplicatePageXml, 200),
+    ]);
+
+    $response = $this->get('/feed/'.$digest->uuid);
+
+    $response->assertOk();
+
+    $rss = simplexml_load_string($response->getContent(), 'SimpleXMLElement', LIBXML_NOCDATA);
+
+    expect($rss)->not->toBeFalse();
+    expect(count($rss->channel->item))->toBe(3);
+
+    Http::assertSentCount(3);
+    Http::assertSent(fn ($request) => $request->url() === 'https://example.com/feed.xml?source=main&paged=1');
+    Http::assertSent(fn ($request) => $request->url() === 'https://example.com/feed.xml?source=main&paged=2');
+    Http::assertSent(fn ($request) => $request->url() === 'https://example.com/feed.xml?source=main&paged=3');
+});
+
+test('paginated html digests stop pagination when page contains out-of-range entries', function () {
+    config()->set('app.timezone', 'UTC');
+
+    $targetDate = CarbonImmutable::create(2026, 3, 6, 0, 0, 0, 'UTC');
+    CarbonImmutable::setTestNow($targetDate->addDay());
+
+    $digest = Digest::factory()->create([
+        'feed_url' => 'https://example.com/feed.xml',
+        'timezone' => 'UTC',
+        'only_prior_to_today' => false,
+        'is_paginated_feed' => true,
+    ]);
+
+    $inRangeEarly = CarbonImmutable::create(2026, 3, 6, 9, 0, 0, 'UTC');
+    $inRangeLate = CarbonImmutable::create(2026, 3, 6, 18, 0, 0, 'UTC');
+    $outOfRangeOlder = CarbonImmutable::create(2026, 3, 5, 23, 0, 0, 'UTC');
+
+    $pageOneXml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Range Item One</title>
+            <link>https://example.com/range-1</link>
+            <guid>range-1</guid>
+            <pubDate>{$inRangeEarly->toRfc2822String()}</pubDate>
+            <category>Tech</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    $pageTwoXml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Example Feed</title>
+        <item>
+            <title>Range Item Two</title>
+            <link>https://example.com/range-2</link>
+            <guid>range-2</guid>
+            <pubDate>{$inRangeLate->toRfc2822String()}</pubDate>
+            <category>Tech</category>
+        </item>
+        <item>
+            <title>Older Item</title>
+            <link>https://example.com/older</link>
+            <guid>older-item</guid>
+            <pubDate>{$outOfRangeOlder->toRfc2822String()}</pubDate>
+            <category>Archive</category>
+        </item>
+    </channel>
+</rss>
+XML;
+
+    Http::fake([
+        'https://example.com/feed.xml?paged=1' => Http::response($pageOneXml, 200),
+        'https://example.com/feed.xml?paged=2' => Http::response($pageTwoXml, 200),
+    ]);
+
+    $response = $this->get('/feed/'.$digest->uuid.'/'.$targetDate->toDateString());
+
+    $response->assertOk();
+    $response->assertSee('Range Item One');
+    $response->assertSee('Range Item Two');
+    $response->assertDontSee('Older Item');
+
+    Http::assertSentCount(2);
+    Http::assertSent(fn ($request) => $request->url() === 'https://example.com/feed.xml?paged=1');
+    Http::assertSent(fn ($request) => $request->url() === 'https://example.com/feed.xml?paged=2');
+
+    CarbonImmutable::setTestNow();
+});

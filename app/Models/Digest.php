@@ -26,6 +26,7 @@ class Digest extends Model
         'filters',
         'only_prior_to_today',
         'max_days',
+        'is_paginated_feed',
         'is_weekly_digest',
         'week_starts_on',
     ];
@@ -36,6 +37,7 @@ class Digest extends Model
             'filters' => 'array',
             'only_prior_to_today' => 'boolean',
             'max_days' => 'integer',
+            'is_paginated_feed' => 'boolean',
             'is_weekly_digest' => 'boolean',
         ];
     }

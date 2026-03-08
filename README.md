@@ -13,6 +13,7 @@ The majority of this codebase was written with AI assistance and is provided as-
 - HTML view for a specific date with a clean digest layout.
 - Token-protected API for managing digests.
 - Optional filter rules for categories, authors, and summaries.
+- Optional paginated feed mode (`paged=1,2,3...`) for feeds split across pages.
 - Optional weekly digest mode for prior-week rollups.
 - Cached outputs with configurable TTL.
 
@@ -99,6 +100,7 @@ Payload:
   "filters": ["+#\"gaming\"", "-author:\"bob smith\""],
   "only_prior_to_today": true,
   "max_days": 7,
+  "is_paginated_feed": false,
   "is_weekly_digest": false,
   "week_starts_on": null
 }
@@ -108,6 +110,7 @@ Notes:
 - When creating a digest, either `feed_url` or `name` must be unique.
 - `only_prior_to_today` defaults to `true` and limits digests to entries dated before today.
 - `max_days` limits how many days are returned in the public RSS digest.
+- `is_paginated_feed` defaults to `false`. When enabled, feed fetches use `paged=1` and increment pages during digest generation.
 - `is_weekly_digest` defaults to `false`.
 - When `is_weekly_digest` is `true`, `week_starts_on` is required and must be one of: `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`.
 - Weekly digests return entries from the prior completed week based on `week_starts_on`.
@@ -166,6 +169,7 @@ Digest outputs are cached in `storage/app/digests` using the TTL defined in `con
 - Supported units: `minutes`, `hours`, `days`.
 - Updating a digest clears the cached outputs for that digest.
 - Weekly digest RSS output is only cached on the configured `week_starts_on` day.
+- For paginated feeds, caching fetches `paged` results until either duplicate entries are encountered or a page includes entries outside the current expected date window.
 
 ## Testing
 
