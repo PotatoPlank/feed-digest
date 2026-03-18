@@ -158,10 +158,13 @@ class FeedAggregator
 
         krsort($grouped, SORT_NATURAL);
 
+        $dateGroups = !empty($grouped[$dateKey]) ? [$dateKey => $this->groupByCategory($grouped[$dateKey], $filterConfig)] : [];
+        $groups = !empty($grouped[$dateKey]) ? $this->groupByCategory($grouped[$dateKey], $filterConfig) : [];
+
         return [
             'title' => $feedTitle,
-            'groupsByDate' => [$dateKey => $this->groupByCategory($grouped[$dateKey], $filterConfig)],
-            'groups' => $this->groupByCategory($grouped[$dateKey], $filterConfig),
+            'groupsByDate' => $dateGroups,
+            'groups' => $groups,
         ];
     }
 
